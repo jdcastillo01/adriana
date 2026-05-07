@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>CRM PRO - Corp Inveca</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <style>
+        .btn-clear-main {
+            width: 100%; padding: 12px; margin-top: 20px;
+            background: linear-gradient(135deg, #f87171 0%, #dc2626 100%);
+            color: white; border: none; border-radius: 8px;
+            font-weight: bold; cursor: pointer; transition: all 0.3s ease;
+            display: flex; align-items: center; justify-content: center; gap: 10px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        .btn-clear-main:hover {
+            background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(220, 38, 38, 0.3);
+        }
+        /* Estilo extra para el estatus En Mora */
+        .pill-mora { background: #7f1d1d !important; color: #fecaca !important; border: 1px solid #ef4444; }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <aside class="sidebar">
+            <div class="logo"><i class="fab fa-whatsapp"></i> CRM INVECA</div>
+            <nav class="menu-nav">
+                <button class="menu-btn {{ 'active' if active_tab == 'ventas' }}" onclick="window.location.href='/?tab=ventas'">
+                    <i class="fas fa-user-friends"></i> Ventas
+                </button>
+                <button class="menu-btn {{ 'active' if active_tab == 'cobranza' }}" onclick="window.location.href='/?tab=cobranza'">
+                    <i class="fas fa-file-invoice-dollar"></i> Cobranza
+                </button>
+                <hr style="opacity: 0.1; margin: 15px 0;">
+                <button class="menu-btn" onclick="abrirModalCorreo()" style="color: #60a5fa;">
+                    <i class="fas fa-paper-plane"></i> Enviar Soporte
+                </button>
+            </nav>
+
+            <div class="import-actions">
+                <form id="form-v" action="/importar/ventas" method="post" enctype="multipart/form-data">
+                    <label for="file-v" class="import-label v-bg">Excel Ventas</label>
+                    <input id="file-v" type="file" name="file" onchange="document.getElementById('form-v').submit()"/>
+                </form>
+                <form id="form-c" action="/importar/cobranza" method="post" enctype="multipart/form-data">
+                    <label for="file-c" class="import-label c-bg">Excel Cobros</label>
+                    <input id="file-c" type="file" name="file" onchange="document.getElementById('form-c').submit()"/>
+                </form>
+
+                <button class="btn-clear-main" onclick="confirmarBorrado()">
+                    <i class="fas fa-trash-alt"></i> 
+                    Vaciar Lista {{ 'Ventas' if active_tab == 'ventas' else 'Cobranza' }}
+                </button>
+                <form id="form-borrar-todo" method="post" style="display:none;"></form>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <section class="tab-content {{ 'active' if active_tab == 'ventas' }}">
+                <div class="section-header">
+                    <h2>Ventas ({{ ventas|length }})</h2>
+                    <input type="text" class="search-input" placeholder="Buscar..." onkeyup="filterTable('t-v', this.value)">
+                </div>
+                <div class="table-container">
+                    <table id="t-v">
+                        <thead><tr><th>Nombre</th><th>Teléfono</th><th>Estatus</th><th>Acciones</th></tr></thead>
+                        <tbody>
+                            {% for v in ventas %}
+                            <tr>
+                                <td>{{ v.nombre }}</td><td>{{ v.telefono }}</td>
+                                <td><span class="pill {{ 'pill-green' if v.estatus == 'Vendido' else 'pill-orange' }}">{{ v.estatus }}</span></td>
+                                <td class="btns">
+                                    <button class="btn-tool" onclick="updateStatus('ventas', {{v.id}}, this)"><i class="fas fa-sync-alt"></i></button>
+                                    <a href="/wa/ventas/{{v.id}}" target="_blank" class="btn-wa">Chat</a>
+                                    <button class="btn-tool" onclick="deleteRecord('ventas', {{v.id}}, this)"><i class="fas fa-trash"></i></button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="tab-content {{ 'active' if active_tab == 'cobranza' }}">
+                <div class="section-header">
+                    <h2>Cobranza ({{ cobros|length }})</h2>
+                    <input type="text" class="search-input" placeholder="Buscar..." onkeyup="filterTable('t-c', this.value)">
+                </div>
+                <div class="table-container">
+                    <table id="t-c">
+                        <thead><tr><th>Nombre</th><th>Factura</th><th>Monto</th><th>Estatus</th><th>Acciones</th></tr></thead>
+                        <tbody>
+                            {% for c in cobros %}
+                            <tr>
+                                <td>{{ c.nombre }}</td><td>#{{ c.factura }}</td><td>{{ c.monto }}</td>
+                                <td>
+                                    <span class="pill 
+                                        {% if 'pagado' in c.estatus.lower() %} pill-green 
+                                        {% elif 'mora' in c.estatus.lower() %} pill-mora
+                                        {% else %} pill-red {% endif %}">
+                                        {{ c.estatus }}
+                                    </span>
+                                </td>
+                                <td class="btns">
+                                    <button class="btn-tool" onclick="updateStatus('cobranza', {{c.id}}, this)"><i class="fas fa-check-double"></i></button>
+                                    <button class="btn-tool" onclick="abrirModalCorreo('{{c.nombre}}', '{{c.factura}}')"><i class="fas fa-envelope"></i></button>
+                                    <a href="/wa/cobranza/{{c.id}}" target="_blank" class="btn-wa c-bg">Cobrar</a>
+                                    <button class="btn-tool" onclick="deleteRecord('cobranza', {{c.id}}, this)"><i class="fas fa-trash"></i></button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        function confirmarBorrado() {
+            const tabActual = "{{ active_tab }}";
+            const nombreLista = tabActual === 'ventas' ? 'Ventas' : 'Cobranza';
+            Swal.fire({
+                title: `¿Vaciar toda la lista de ${nombreLista}?`,
+                text: "Esta acción no se puede deshacer.",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#dc2626',
+                cancelButtonColor: '#4b5563',
+                confirmButtonText: 'Sí, borrar todo',
+                cancelButtonText: 'Cancelar',
+                background: '#1e293b', color: '#fff'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    const form = document.getElementById('form-borrar-todo');
+                    form.action = `/borrar_todo/${tabActual}`;
+                    form.submit();
+                }
+            });
+        }
+
+        function updateStatus(t, id, btn) {
+            fetch(`/cambiar_estatus/${t}/${id}`).then(r => r.json()).then(data => {
+                const p = btn.closest('tr').querySelector('.pill');
+                const estatus = data.nuevo_estatus.toLowerCase();
+                p.textContent = data.nuevo_estatus;
+
+                // Actualizar clases dinámicamente según el texto del estatus
+                if (estatus.includes('vendido') || estatus.includes('pagado')) {
+                    p.className = 'pill pill-green';
+                } else if (estatus.includes('mora')) {
+                    p.className = 'pill pill-mora';
+                } else if (estatus.includes('vender') || estatus.includes('por vender')) {
+                    p.className = 'pill pill-orange';
+                } else {
+                    p.className = 'pill pill-red';
+                }
+            });
+        }
+
+        async function abrirModalCorreo(nombre = '', factura = '') {
+            const { value: formValues } = await Swal.fire({
+                title: 'Enviar Soporte de Pago',
+                background: '#1e293b', color: '#fff',
+                html: `
+                    <input id="sw-n" class="swal2-input" placeholder="Nombre Cliente" value="${nombre}">
+                    <input id="sw-f" class="swal2-input" placeholder="Número Factura" value="${factura}">
+                    <div style="margin-top:15px">
+                        <button type="button" class="btn-file-custom" onclick="document.getElementById('sw-files').click()">
+                            <i class="fas fa-paperclip"></i> Adjuntar Fotos/PDF
+                        </button>
+                        <input type="file" id="sw-files" multiple style="display:none" onchange="document.getElementById('f-count').innerText = this.files.length + ' archivos'">
+                        <div id="f-count" style="font-size:0.8rem; color:#4ade80; margin-top:5px"></div>
+                    </div>
+                `,
+                showCancelButton: true,
+                confirmButtonText: 'Enviar Correo',
+                preConfirm: () => {
+                    return { n: document.getElementById('sw-n').value, f: document.getElementById('sw-f').value, files: document.getElementById('sw-files').files }
+                }
+            });
+
+            if (formValues) {
+                const fd = new FormData();
+                fd.append('nombre', formValues.n); fd.append('factura', formValues.f);
+                for (let f of formValues.files) fd.append('adjuntos', f);
+                Swal.fire({ title: 'Enviando...', didOpen: () => Swal.showLoading(), background: '#1e293b', color: '#fff' });
+                fetch('/enviar_correo', { method: 'POST', body: fd })
+                .then(r => r.json()).then(data => {
+                    Swal.fire({ title: data.success ? 'Éxito' : 'Error', text: data.message, icon: data.success ? 'success' : 'error', background: '#1e293b', color: '#fff' });
+                });
+            }
+        }
+
+        function deleteRecord(t, id, btn) {
+            Swal.fire({
+                title: '¿Eliminar registro?',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Eliminar',
+                background: '#1e293b', color: '#fff'
+            }).then((result) => {
+                if(result.isConfirmed) fetch(`/eliminar/${t}/${id}`, { method: 'DELETE' }).then(() => btn.closest('tr').remove());
+            });
+        }
+
+        function filterTable(id, q) {
+            const rows = document.querySelectorAll(`#${id} tbody tr`);
+            rows.forEach(r => r.style.display = r.innerText.toLowerCase().includes(q.toLowerCase()) ? '' : 'none');
+        }
+    </script>
+</body>
+</html>
